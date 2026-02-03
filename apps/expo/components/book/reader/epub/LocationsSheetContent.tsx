@@ -18,8 +18,11 @@ import { flattenToc, type TableOfContentsItem, useEpubLocationStore } from '~/st
 import { useEpubSheetStore } from '~/stores/epubSheet'
 
 import AnnotationsAndBookmarks from './AnnotationsAndBookmarks'
+import { useEpubReaderContext } from './context'
 
 export default function LocationsSheetContent() {
+	const { getRequestHeaders } = useEpubReaderContext()
+
 	const [activePage, setActivePage] = useState(0)
 	const [visibleRange, setVisibleRange] = useState({ min: 0, max: 0 })
 
@@ -38,8 +41,6 @@ export default function LocationsSheetContent() {
 	const embeddedMetadata = useEpubLocationStore((store) => store.embeddedMetadata)
 	const position = useEpubLocationStore((store) => store.position)
 	const currentChapter = useEpubLocationStore((store) => store.currentChapter)
-
-	const requestHeaders = useEpubLocationStore((store) => store.requestHeaders)
 
 	const thumbnailRatio = usePreferencesStore((state) => state.thumbnailRatio)
 
@@ -173,7 +174,7 @@ export default function LocationsSheetContent() {
 								source={{
 									uri: book?.thumbnail.url,
 									headers: {
-										...requestHeaders?.(),
+										...getRequestHeaders?.(),
 									},
 								}}
 								resizeMode="stretch"
@@ -257,14 +258,14 @@ const TableOfContentsListItem = ({
 	currentChapterActive: boolean
 	nextChapterActive: boolean
 }) => {
-	const actions = useEpubLocationStore((store) => store.actions)
+	const { readerRef } = useEpubReaderContext()
 	const closeSheet = useEpubSheetStore((state) => state.closeSheet)
 
 	const handlePress = async () => {
 		// E.g.: "text/part0010.html#9H5K0-..." -> ["text/part0010.html", "9H5K0-..."]
 		const [hrefWithoutFragment, fragment] = item.content.split('#')
 
-		await actions?.goToLocation({
+		await readerRef?.goToLocation({
 			href: hrefWithoutFragment || item.content,
 			type: 'application/xhtml+xml',
 			chapterTitle: item.label,
