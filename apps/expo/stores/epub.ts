@@ -19,6 +19,12 @@ import { ZustandMMKVStorage } from './store'
 export { BookmarkRef } from '~/components/book/reader/image/context'
 export type { Decoration } from '~/modules/readium'
 
+const JUMP_STACK_TIMEOUT_MS = 80 * 1000 // 80 seconds
+const JUMP_STACK_MAX_SIZE = 3
+// A module-level timer _feels_ kinda like a smell lol but for now its fine I think.
+// I can always put it inside the store if needed
+let jumpStackTimerId: ReturnType<typeof setTimeout> | null = null
+
 export const trimFragmentFromHref = (href: string) => {
 	return href.split('#')[0]
 }
@@ -108,6 +114,11 @@ export const resolveTocItemByPosition = (position: ReadiumLocation['position']) 
 
 export type EmbeddedMetadata = Pick<BookMetadata, 'title' | 'author' | 'language' | 'publisher'>
 
+export type JumpEntry = {
+	locator: ReadiumLocator
+	direction: 'back' | 'forward'
+}
+
 export type IEpubLocationStore = {
 	book?: EbookReaderBookRef
 	setBook: (book: EbookReaderBookRef) => void
@@ -119,6 +130,15 @@ export type IEpubLocationStore = {
 	toc: TableOfContentsItem[]
 	embeddedMetadata?: EmbeddedMetadata
 	positions: ReadiumLocator[]
+
+	// Note: I originally had jumpStack as ReadiumLocator[], but faced way too many timing issues
+	// wrt resolving the direction before the button would render since navigation isn't immediate.
+	// So, before a jump is pushed the pusher will compute that so when it renders it doesn't flash
+	// the incorrect direction
+	jumpStack: JumpEntry[]
+	pushJump: (locator: ReadiumLocator, direction: 'back' | 'forward') => void
+	popJump: () => JumpEntry | undefined
+	clearJumpStack: () => void
 
 	onTocChange: (toc: TableOfContentsItem[] | string[]) => void
 	onBookLoad: (metadata?: BookMetadata, positions?: ReadiumLocator[]) => void
@@ -148,6 +168,52 @@ export const useEpubLocationStore = create<IEpubLocationStore>((set, get) => ({
 	totalPages: 0,
 	toc: [],
 	positions: [],
+
+	jumpStack: [],
+	pushJump: (locator, direction) => {
+		const { jumpStack } = get()
+
+		if (jumpStackTimerId) {
+			clearTimeout(jumpStackTimerId)
+		}
+
+		const entry: JumpEntry = { locator, direction }
+		const newStack = [entry, ...jumpStack].slice(0, JUMP_STACK_MAX_SIZE)
+		set({ jumpStack: newStack })
+
+		jumpStackTimerId = setTimeout(() => {
+			set({ jumpStack: [] })
+			jumpStackTimerId = null
+		}, JUMP_STACK_TIMEOUT_MS)
+	},
+	popJump: () => {
+		const { jumpStack } = get()
+		if (jumpStack.length === 0) return undefined
+
+		const [first, ...rest] = jumpStack
+		set({ jumpStack: rest })
+
+		if (jumpStackTimerId) {
+			clearTimeout(jumpStackTimerId)
+		}
+		if (rest.length > 0) {
+			jumpStackTimerId = setTimeout(() => {
+				set({ jumpStack: [] })
+				jumpStackTimerId = null
+			}, JUMP_STACK_TIMEOUT_MS)
+		} else {
+			jumpStackTimerId = null
+		}
+
+		return first
+	},
+	clearJumpStack: () => {
+		if (jumpStackTimerId) {
+			clearTimeout(jumpStackTimerId)
+			jumpStackTimerId = null
+		}
+		set({ jumpStack: [] })
+	},
 
 	onTocChange: (toc) => {
 		let parsedToc: TableOfContentsItem[] = []
@@ -224,7 +290,11 @@ export const useEpubLocationStore = create<IEpubLocationStore>((set, get) => ({
 		return get().annotations.find((a) => a.id === annotationId)
 	},
 
-	onUnload: () =>
+	onUnload: () => {
+		if (jumpStackTimerId) {
+			clearTimeout(jumpStackTimerId)
+			jumpStackTimerId = null
+		}
 		set({
 			currentChapter: '',
 			position: 0,
@@ -234,7 +304,9 @@ export const useEpubLocationStore = create<IEpubLocationStore>((set, get) => ({
 			embeddedMetadata: undefined,
 			bookmarks: [],
 			annotations: [],
-		}),
+			jumpStack: [],
+		})
+	},
 }))
 
 // TODO(highlights): Think through highlight colors that make sense for each preset theme

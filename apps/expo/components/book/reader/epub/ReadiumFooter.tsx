@@ -9,6 +9,8 @@ import { useDisplay } from '~/lib/hooks'
 import { useReaderStore } from '~/stores'
 import { useEpubLocationStore, useEpubTheme } from '~/stores/epub'
 
+import JumpButton from './JumpButton'
+
 export const FOOTER_HEIGHT = 48
 
 export default function ReadiumFooter() {
@@ -49,9 +51,11 @@ export default function ReadiumFooter() {
 
 	return (
 		<Animated.View
-			className="absolute z-20 h-12 flex-row items-center justify-center gap-2 px-2"
+			className="absolute z-20 h-12 flex-row items-center justify-center px-4"
 			style={animatedStyles}
 		>
+			<JumpButton />
+
 			<Text className="font-medium" style={{ color: colors?.foreground, opacity: 0.9 }}>
 				{formattedPosition}
 			</Text>
