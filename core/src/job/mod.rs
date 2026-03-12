@@ -44,7 +44,7 @@ pub use controller::*;
 pub use manager::*;
 use uuid::Uuid;
 
-use crate::utils::get_insert_batch_size;
+use crate::database::get_insert_batch_size;
 
 /// The retry policy for a job. This is used to determine if a job should be requeued after
 /// a non-critical failure.
