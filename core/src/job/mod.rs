@@ -44,6 +44,8 @@ pub use controller::*;
 pub use manager::*;
 use uuid::Uuid;
 
+use crate::utils::get_insert_batch_size;
+
 /// The retry policy for a job. This is used to determine if a job should be requeued after
 /// a non-critical failure.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -374,17 +376,26 @@ pub trait Executor: Send + Sync {
 		let expected_logs = output.logs.len();
 
 		if expected_logs > 0 {
-			let active_models = output.logs.into_iter().map(|log| log::ActiveModel {
-				job_id: Set(Some(job_id.to_string())),
-				level: Set(log.level),
-				message: Set(log.msg),
-				timestamp: Set(log.timestamp.into()),
-				context: Set(log.context),
-				..Default::default()
-			});
+			let mut active_models: Vec<_> = output
+				.logs
+				.into_iter()
+				.map(|log| log::ActiveModel {
+					job_id: Set(Some(job_id.to_string())),
+					level: Set(log.level),
+					message: Set(log.msg),
+					timestamp: Set(log.timestamp.into()),
+					context: Set(log.context),
+					..Default::default()
+				})
+				.collect();
 
-			if let Err(error) = log::Entity::insert_many(active_models).exec(conn).await {
-				tracing::error!(?error, "Failed to persist job logs to DB");
+			let batch_size = get_insert_batch_size(5); // ~5 set columns
+			while !active_models.is_empty() {
+				let drain_end = batch_size.min(active_models.len());
+				let chunk: Vec<_> = active_models.drain(..drain_end).collect();
+				if let Err(error) = log::Entity::insert_many(chunk).exec(conn).await {
+					tracing::error!(?error, "Failed to persist job logs to DB");
+				}
 			}
 		}
 
